@@ -1,8 +1,23 @@
 # commands to ignore
 cmdignore=(htop tmux top vim)
 
-# set gt 0 to enable GNU units for time results
-gnuunits=0
+
+function sec_to_human () {
+    local H=''
+    local M=''
+    local S=''
+
+    local h=$(($1 / 3600))
+    [ $h -gt 0 ] && H="${h} hour " && [ $h -gt 1 ] && H="${H}s"
+
+    local m=$((($1 / 60) % 60))
+    [ $m -gt 0 ] && M="${m} min " && [ $m -gt 1 ] && M="${M}s"
+
+    local s=$(($1 % 60))
+    [ $s -gt 0 ] && S="${s} sec" && [ $s -gt 1 ] && S="${S}s"
+
+    echo $H$M$S
+}
 
 # end and compare timer, notify-send if needed
 function notifyosd-precmd() {
@@ -12,32 +27,21 @@ function notifyosd-precmd() {
     else
         if [ ! -z "$cmd" ]; then
             cmd_end=`date +%s`
-            ((cmd_secs=$cmd_end - $cmd_start))
+            ((cmd_time=$cmd_end - $cmd_start))
         fi
         if [ $retval -gt 0 ]; then
-			cmdstat="with warning"
-			sndstat="/usr/share/sounds/gnome/default/alerts/sonar.ogg"
-			urgency="critical"
-		else
-            cmdstat="successfully"
-			sndstat="/usr/share/sounds/gnome/default/alerts/glass.ogg"
-			urgency="normal"
+            icon="cross-mark"
+        else
+            icon="check-mark"
         fi
-        if [ ! -z "$cmd" -a $cmd_secs -gt 10 ]; then
-			if [ $gnuunits -gt 0 ]; then
-				cmd_time=$(units "$cmd_secs seconds" "centuries;years;months;weeks;days;hours;minutes;seconds" | \
-						sed -e 's/\ +/\,/g' -e s'/\t//')
-			else
-				cmd_time="$cmd_secs seconds"
-			fi
+        if [ ! -z "$cmd" -a $cmd_time -gt 3 ]; then
+            longtimeout="$(((cmd_time / 3) * 1000))"
+            timeout="$(btcs -t 15000 $longtimeout min)"
+            local human="$(sec_to_human $cmd_time)"
             if [ ! -z $SSH_TTY ] ; then
-                notify-send -i utilities-terminal \
-						-u $urgency "$cmd_basename on `hostname` completed $cmdstat" "\"$cmd\" took $cmd_time"; \
-						play -q $sndstat
+                notify-send -t $timeout -i $icon "Command took $human" "$cmd"
             else
-                notify-send -i utilities-terminal \
-						-u $urgency "$cmd_basename completed $cmdstat" "\"$cmd\" took $cmd_time"; \
-						play -q $sndstat
+                notify-send -t $timeout -i $icon "Command took $human" "$cmd"
             fi
         fi
         unset cmd
@@ -50,7 +54,7 @@ precmd_functions+=( notifyosd-precmd )
 # get command name and start the timer
 function notifyosd-preexec() {
     cmd=$1
-    cmd_basename=${${cmd:s/sudo //}[(ws: :)1]} 
+    cmd_basename=${${cmd:s/sudo //}[(ws: :)1]}
     cmd_start=`date +%s`
 }
 
